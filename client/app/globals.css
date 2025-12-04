@@ -17,3 +17,15 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -1000;
+  }
+}
+
+.animate-dash path {
+  stroke-dasharray: 50 50;
+  stroke-dashoffset: 1000;
+  animation: dash 5s linear infinite;
+}
