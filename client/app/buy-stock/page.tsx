@@ -4,13 +4,19 @@ import React, { useState } from 'react';
 import { ChevronLeft, Calendar, Search, Plus, Store } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
+import { supabase } from '@/utils/superbase/client';
+
+
+
 const InwardRegisterForm = () => {
     const router = useRouter();
+    const [loading, setLoading] = useState(false);
     // Simple state management for demonstration (replace with react-hook-form later)
     const [formData, setFormData] = useState({
         date: new Date().toISOString().split('T')[0], // Default to today
         destination: 'Main Store',
         drugName: '',
+        weight: '',
         packSize: '',
         qty: '',
         free: '',
@@ -20,6 +26,127 @@ const InwardRegisterForm = () => {
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
+    };
+
+    const handleSubmit = async () => {
+        try {
+            setLoading(true);
+
+            // 1. Check if medicine exists
+            let medicineId;
+            const { data: existingMedicine, error: fetchError } = await supabase
+                .from('medicine')
+                .select('id')
+                .eq('name', formData.drugName)
+                .single();
+
+            if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "Row not found"
+                throw fetchError;
+            }
+
+            if (existingMedicine) {
+                medicineId = existingMedicine.id;
+            } else {
+                // 2. Create new medicine if not exists
+                const { data: newMedicine, error: createError } = await supabase
+                    .from('medicine')
+                    .insert([
+                        {
+                            name: formData.drugName,
+                            weight: Number(formData.weight) || 0,
+                            pack_size: Number(formData.packSize) || 1,
+                        }
+                    ])
+                    .select('id')
+                    .single();
+
+                if (createError) throw createError;
+                medicineId = newMedicine.id;
+            }
+
+            // 3. Insert into Inward Register
+            const { error: insertError } = await supabase
+                .from('inward_register')
+                .insert([
+                    {
+                        date: formData.date,
+                        destination: formData.destination,
+                        item_id: medicineId,
+                        qty_packs: Number(formData.qty) || 0,
+                        free_packs: Number(formData.free) || 0,
+                        buy_price: Number(formData.buyPrice) || 0,
+                        retail_price: Number(formData.retailPrice) || 0,
+                    },
+                ]);
+
+            if (insertError) throw insertError;
+
+            // 4. Update Inventory (Main Store or Pharmacy)
+            // 4. Update Inventory (Main Store or Pharmacy)
+            // Determine target table based on destination
+            const targetTable = formData.destination === 'Main Store' ? 'main_store' : 'pharmacy';
+            const totalPacks = (Number(formData.qty) || 0) + (Number(formData.free) || 0);
+            const buyPrice = Number(formData.buyPrice) || 0;
+
+            // Check if item exists in the target inventory table
+            const { data: existingInventory, error: inventoryFetchError } = await supabase
+                .from(targetTable)
+                .select('pack_qty')
+                .eq('item_id', medicineId)
+                .eq('buy_price', buyPrice)
+                .single();
+
+            if (inventoryFetchError && inventoryFetchError.code !== 'PGRST116') {
+                throw inventoryFetchError;
+            }
+
+            if (existingInventory) {
+                // Update existing stock: Increment pack_qty
+                const { error: updateError } = await supabase
+                    .from(targetTable)
+                    .update({
+                        pack_qty: existingInventory.pack_qty + totalPacks,
+                        last_updated: new Date().toISOString()
+                    })
+                    .eq('item_id', medicineId)
+                    .eq('buy_price', buyPrice);
+
+                if (updateError) throw updateError;
+            } else {
+                // Insert new stock record
+                const { error: inventoryInsertError } = await supabase
+                    .from(targetTable)
+                    .insert([
+                        {
+                            item_id: medicineId,
+                            buy_price: buyPrice,
+                            pack_qty: totalPacks,
+                            pill_qty: 0, // Initial pill qty is 0
+                        }
+                    ]);
+
+                if (inventoryInsertError) throw inventoryInsertError;
+            }
+
+            alert('Item added successfully!');
+            // Reset form or navigate away
+            setFormData({
+                date: new Date().toISOString().split('T')[0],
+                destination: 'Main Store',
+                drugName: '',
+                weight: '',
+                packSize: '',
+                qty: '',
+                free: '',
+                buyPrice: '',
+                retailPrice: ''
+            });
+        } catch (error: any) {
+            console.error('Error adding item:', error);
+            alert('Error adding item: ' + error.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     // --- Reusable Input Styles ---
@@ -47,7 +174,7 @@ const InwardRegisterForm = () => {
             </div>
 
             {/* --- Form Container --- */}
-            <div className="flex-1 px-4 py-6 overflow-y-auto pb-32"> {/* pb-32 for button clearance */}
+            <div className="flex-1 px-4 py-6 overflow-y-auto pb-56"> {/* pb-56 for button clearance */}
 
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-6">
 
@@ -102,20 +229,36 @@ const InwardRegisterForm = () => {
                                     type="text"
                                     name="drugName"
                                     id="drugName"
+                                    value={formData.drugName}
+                                    onChange={handleChange}
                                     placeholder="Search repository..."
                                     className={`${inputStyle} pl-12`}
                                 />
                             </div>
                         </div>
 
-                        {/* Pack Size */}
-                        <div>
-                            <label htmlFor="packSize" className={labelStyle}>Pack Size</label>
-                            <input
-                                type="number" inputMode="numeric" placeholder="e.g., 100"
-                                name="packSize" id="packSize"
-                                className={inputStyle}
-                            />
+                        {/* Weight and Pack Size Row */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label htmlFor="weight" className={labelStyle}>Weight (mg)</label>
+                                <input
+                                    type="number" inputMode="numeric" placeholder="e.g., 500"
+                                    name="weight" id="weight"
+                                    value={formData.weight}
+                                    onChange={handleChange}
+                                    className={inputStyle}
+                                />
+                            </div>
+                            <div>
+                                <label htmlFor="packSize" className={labelStyle}>Pack Size</label>
+                                <input
+                                    type="number" inputMode="numeric" placeholder="e.g., 100"
+                                    name="packSize" id="packSize"
+                                    value={formData.packSize}
+                                    onChange={handleChange}
+                                    className={inputStyle}
+                                />
+                            </div>
                         </div>
 
                         {/* Row: Qty & Free (Side-by-side for small numbers) */}
@@ -125,6 +268,8 @@ const InwardRegisterForm = () => {
                                 <input
                                     type="number" inputMode="numeric" placeholder="0"
                                     name="qty" id="qty"
+                                    value={formData.qty}
+                                    onChange={handleChange}
                                     className={inputStyle}
                                 />
                             </div>
@@ -133,6 +278,8 @@ const InwardRegisterForm = () => {
                                 <input
                                     type="number" inputMode="numeric" placeholder="0"
                                     name="free" id="free"
+                                    value={formData.free}
+                                    onChange={handleChange}
                                     className={inputStyle}
                                 />
                             </div>
@@ -151,6 +298,8 @@ const InwardRegisterForm = () => {
                                 <input
                                     type="number" inputMode="decimal" placeholder="0.00"
                                     name="buyPrice" id="buyPrice"
+                                    value={formData.buyPrice}
+                                    onChange={handleChange}
                                     // pl-14 gives room for the "LKR" text
                                     className={`${inputStyle} pl-14 text-right`}
                                 />
@@ -165,6 +314,8 @@ const InwardRegisterForm = () => {
                                 <input
                                     type="number" inputMode="decimal" placeholder="0.00"
                                     name="retailPrice" id="retailPrice"
+                                    value={formData.retailPrice}
+                                    onChange={handleChange}
                                     className={`${inputStyle} pl-14 text-right`}
                                 />
                             </div>
@@ -175,10 +326,14 @@ const InwardRegisterForm = () => {
             </div>
 
             {/* --- Submit Action (Sticky Bottom) --- */}
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-                <button className="w-full bg-[#00C2A8] text-white text-lg font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-teal-100 active:scale-[0.98] transition-transform">
+            <div className="fixed bottom-28 left-0 right-0 p-4 bg-white border-t border-gray-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50">
+                <button
+                    onClick={handleSubmit}
+                    disabled={loading}
+                    className="w-full bg-[#00C2A8] text-white text-lg font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-teal-100 active:scale-[0.98] transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                     <Plus size={24} strokeWidth={3} />
-                    Add Item to Queue
+                    {loading ? 'Adding...' : 'Add item'}
                 </button>
             </div>
 
