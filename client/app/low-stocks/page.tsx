@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
     ArrowLeft,
     Search,
@@ -18,6 +19,7 @@ import {
     CheckCircle2,
     Clock
 } from 'lucide-react';
+import { supabase } from '@/utils/superbase/client';
 
 /**
  * TYPES
@@ -35,18 +37,6 @@ interface Medicine {
     lastOrdered: string;
     price: number;
 }
-
-/**
- * MOCK DATA
- */
-const MEDICINES: Medicine[] = [
-    { id: '1', name: 'Amoxicillin 500mg', category: 'Antibiotics', currentStock: 12, minStock: 50, maxStock: 200, unit: 'strips', lastOrdered: '2 weeks ago', price: 12.50 },
-    { id: '2', name: 'Paracetamol Syrup', category: 'Pediatric', currentStock: 5, minStock: 30, maxStock: 100, unit: 'bottles', lastOrdered: '1 month ago', price: 5.00 },
-    { id: '3', name: 'Insulin Glargine', category: 'Diabetes', currentStock: 8, minStock: 25, maxStock: 80, unit: 'pens', lastOrdered: '3 weeks ago', price: 45.00 },
-    { id: '4', name: 'Cetirizine 10mg', category: 'Antihistamine', currentStock: 45, minStock: 50, maxStock: 300, unit: 'strips', lastOrdered: '5 days ago', price: 3.20 },
-    { id: '5', name: 'Vitamin D3', category: 'Supplements', currentStock: 18, minStock: 40, maxStock: 150, unit: 'bottles', lastOrdered: '2 months ago', price: 15.00 },
-    { id: '6', name: 'Ibuprofen 400mg', category: 'Pain Relief', currentStock: 22, minStock: 100, maxStock: 500, unit: 'strips', lastOrdered: '1 week ago', price: 4.50 },
-];
 
 /**
  * HELPER FUNCTIONS
@@ -109,12 +99,55 @@ const FilterChip = ({ label, active, onClick, count }: { label: string, active: 
 
 // 3. Main Page Component
 export default function LowStock() {
+    const router = useRouter();
     const [filter, setFilter] = useState<'all' | 'critical' | 'warning'>('all');
     const [search, setSearch] = useState('');
     const [selectedItem, setSelectedItem] = useState<Medicine | null>(null); // For "Reorder" modal
+    const [medicines, setMedicines] = useState<Medicine[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchMedicines = async () => {
+            setLoading(true);
+            try {
+                const { data, error } = await supabase
+                    .from('main_store')
+                    .select(`
+                        item_id,
+                        pack_qty,
+                        buy_price,
+                        last_updated,
+                        medicine ( name, weight )
+                    `);
+
+                if (error) throw error;
+
+                if (data) {
+                    const mappedData: Medicine[] = data.map((item: any) => ({
+                        id: item.item_id,
+                        name: item.medicine?.name || 'Unknown',
+                        category: 'General', // Default as schema doesn't have category
+                        currentStock: item.pack_qty,
+                        minStock: 20, // Default threshold
+                        maxStock: 100, // Default max
+                        unit: 'packs',
+                        lastOrdered: item.last_updated ? new Date(item.last_updated).toLocaleDateString() : 'N/A',
+                        price: item.buy_price
+                    }));
+                    setMedicines(mappedData);
+                }
+            } catch (error) {
+                console.error("Error fetching low stock data:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchMedicines();
+    }, []);
 
     // Filter Logic
-    const filteredData = MEDICINES.filter(item => {
+    const filteredData = medicines.filter(item => {
         const status = getStockStatus(item.currentStock, item.minStock);
         const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase());
         const matchesFilter = filter === 'all'
@@ -124,7 +157,8 @@ export default function LowStock() {
         return matchesSearch && matchesFilter;
     });
 
-    const criticalCount = MEDICINES.filter(i => getStockStatus(i.currentStock, i.minStock) === 'critical').length;
+    const criticalCount = medicines.filter(i => getStockStatus(i.currentStock, i.minStock) === 'critical').length;
+    const allLowStockCount = medicines.filter(i => getStockStatus(i.currentStock, i.minStock) !== 'ok').length;
 
     return (
         <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-24">
@@ -163,7 +197,7 @@ export default function LowStock() {
                     label="All Alerts"
                     active={filter === 'all'}
                     onClick={() => setFilter('all')}
-                    count={MEDICINES.filter(i => getStockStatus(i.currentStock, i.minStock) !== 'ok').length}
+                    count={allLowStockCount}
                 />
                 <FilterChip
                     label="Critical"
@@ -180,7 +214,9 @@ export default function LowStock() {
 
             {/* --- LIST CONTENT --- */}
             <div className="px-6 mt-4 space-y-4">
-                {filteredData.length === 0 ? (
+                {loading ? (
+                    <div className="text-center py-12 text-gray-400">Loading stock data...</div>
+                ) : filteredData.length === 0 ? (
                     <div className="text-center py-12 text-gray-400">
                         <CheckCircle2 size={48} className="mx-auto mb-4 text-emerald-300" />
                         <p>No stock alerts found.</p>
@@ -234,7 +270,7 @@ export default function LowStock() {
                                         <Clock size={12} /> Last: {item.lastOrdered}
                                     </span>
                                     <button
-                                        onClick={() => setSelectedItem(item)}
+                                        onClick={() => router.push('/buy-stock')}
                                         className="bg-gray-900 text-white text-xs font-semibold px-4 py-2 rounded-xl active:scale-95 transition-transform flex items-center gap-2"
                                     >
                                         <ShoppingCart size={14} />
