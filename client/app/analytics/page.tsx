@@ -26,20 +26,18 @@ import {
     Tooltip,
     Legend
 } from 'recharts';
+import { supabase } from '@/utils/superbase/client';
 
 /**
- * MOCK DATA
+ * TYPES
  */
-const CHART_DATA = [
-    { name: 'Cost', value: 200, color: '#ef4444' }, // Red-500
-    { name: 'Profit', value: 80, color: '#3b82f6' }, // Blue-500
-];
-
-const RECENT_ACTIVITY = [
-    { id: 1, item: 'Acetaminophen', action: 'Restocked', quantity: +50, time: '2h ago' },
-    { id: 2, item: 'Metformin', action: 'Sold', quantity: -12, time: '4h ago' },
-    { id: 3, item: 'Salbutamol', action: 'Low Stock', quantity: 10, time: '5h ago' },
-];
+interface ActivityItem {
+    id: string;
+    item: string;
+    action: string;
+    quantity: number;
+    time: string;
+}
 
 /**
  * COMPONENTS
@@ -63,13 +61,21 @@ const BackgroundPattern = () => (
 );
 
 // 2. Custom Donut Chart Component
-const InventoryDonutChart = () => {
+const InventoryDonutChart = ({ revenue, profit }: { revenue: number, profit: number }) => {
+    const cost = Math.max(0, revenue - profit);
+    const profitMargin = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
+
+    const chartData = [
+        { name: 'Cost', value: cost, color: '#ef4444' }, // Red-500
+        { name: 'Profit', value: profit, color: '#3b82f6' }, // Blue-500
+    ];
+
     return (
         <div className="h-64 w-full relative">
             <ResponsiveContainer width="100%" height="100%">
                 <RechartsPie width={400} height={400}>
                     <Pie
-                        data={CHART_DATA}
+                        data={chartData}
                         cx="50%"
                         cy="50%"
                         innerRadius={60}
@@ -78,28 +84,29 @@ const InventoryDonutChart = () => {
                         dataKey="value"
                         stroke="none"
                     >
-                        {CHART_DATA.map((entry, index) => (
+                        {chartData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                     </Pie>
                     <Tooltip
                         contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                         itemStyle={{ color: '#374151', fontWeight: 600 }}
+                        formatter={(value: number) => `LKR ${value.toLocaleString()}`}
                     />
                     <Legend verticalAlign="bottom" height={36} iconType="circle" />
                 </RechartsPie>
             </ResponsiveContainer>
             {/* Center Text */}
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
-                <span className="text-3xl font-bold text-gray-800">12%</span>
-                <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">Profit Margine</span>
+                <span className="text-3xl font-bold text-gray-800">{profitMargin}%</span>
+                <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">Profit Margin</span>
             </div>
         </div>
     );
 };
 
 // 3. Main Dashboard View
-const DashboardView = ({ onNavigate }: { onNavigate: (page: string) => void }) => {
+const DashboardView = ({ onNavigate, totalRevenue }: { onNavigate: (page: string) => void, totalRevenue: number }) => {
     return (
         <div className="p-6 pt-32 space-y-6 relative z-10 pb-24">
             {/* Grid Menu */}
@@ -144,7 +151,7 @@ const DashboardView = ({ onNavigate }: { onNavigate: (page: string) => void }) =
             <div className="bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
                 <div>
                     <p className="text-xs text-gray-400 font-medium uppercase">Total Revenue</p>
-                    <p className="text-xl font-bold text-gray-800">$45,231.89</p>
+                    <p className="text-xl font-bold text-gray-800">LKR {totalRevenue.toLocaleString()}</p>
                 </div>
                 <div className="flex items-center text-emerald-500 bg-emerald-50 px-2 py-1 rounded-lg">
                     <ArrowUpRight size={16} />
@@ -156,7 +163,7 @@ const DashboardView = ({ onNavigate }: { onNavigate: (page: string) => void }) =
 };
 
 // 4. Analytics Detail View
-const AnalyticsView = ({ onBack }: { onBack: () => void }) => {
+const AnalyticsView = ({ onBack, revenue, profit, recentActivity }: { onBack: () => void, revenue: number, profit: number, recentActivity: ActivityItem[] }) => {
     return (
         <div className="p-6 pt-32 space-y-6 relative z-10 pb-24 animate-in fade-in slide-in-from-bottom-4 duration-300">
             {/* Header for View */}
@@ -180,32 +187,36 @@ const AnalyticsView = ({ onBack }: { onBack: () => void }) => {
             {/* Chart Card */}
             <div className="bg-white rounded-3xl p-6 shadow-sm">
                 <h3 className="text-lg font-bold text-gray-800 mb-4">Distribution of Profit</h3>
-                <InventoryDonutChart />
+                <InventoryDonutChart revenue={revenue} profit={profit} />
             </div>
 
             {/* Recent Activity List */}
             <div className="bg-white rounded-3xl p-6 shadow-sm">
                 <h3 className="text-lg font-bold text-gray-800 mb-4">Recent Activity</h3>
                 <div className="space-y-4">
-                    {RECENT_ACTIVITY.map((activity) => (
-                        <div key={activity.id} className="flex items-center justify-between border-b border-gray-50 last:border-0 pb-3 last:pb-0">
-                            <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-xl ${activity.quantity > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
-                                    {activity.quantity > 0 ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
+                    {recentActivity.length === 0 ? (
+                        <div className="text-center py-4 text-gray-400">No recent activity.</div>
+                    ) : (
+                        recentActivity.map((activity) => (
+                            <div key={activity.id} className="flex items-center justify-between border-b border-gray-50 last:border-0 pb-3 last:pb-0">
+                                <div className="flex items-center gap-3">
+                                    <div className={`p-2 rounded-xl ${activity.quantity > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
+                                        {activity.quantity > 0 ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
+                                    </div>
+                                    <div>
+                                        <p className="font-semibold text-gray-800 text-sm">{activity.item}</p>
+                                        <p className="text-xs text-gray-400">{activity.action}</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="font-semibold text-gray-800 text-sm">{activity.item}</p>
-                                    <p className="text-xs text-gray-400">{activity.action}</p>
+                                <div className="text-right">
+                                    <p className={`font-bold text-sm ${activity.quantity > 0 ? 'text-emerald-600' : 'text-gray-800'}`}>
+                                        {activity.quantity > 0 ? '+' : ''}{activity.quantity}
+                                    </p>
+                                    <p className="text-xs text-gray-400">{activity.time}</p>
                                 </div>
                             </div>
-                            <div className="text-right">
-                                <p className={`font-bold text-sm ${activity.quantity > 0 ? 'text-emerald-600' : 'text-gray-800'}`}>
-                                    {activity.quantity > 0 ? '+' : ''}{activity.quantity === 0 ? '⚠' : activity.quantity}
-                                </p>
-                                <p className="text-xs text-gray-400">{activity.time}</p>
-                            </div>
-                        </div>
-                    ))}
+                        ))
+                    )}
                 </div>
             </div>
         </div>
@@ -217,6 +228,85 @@ export default function AnalyticsPage() {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState('home');
     const [currentView, setCurrentView] = useState('analytics'); // 'dashboard' or 'analytics'
+    const [totalRevenue, setTotalRevenue] = useState(0);
+    const [totalProfit, setTotalProfit] = useState(0);
+    const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
+
+    useEffect(() => {
+        const fetchMetrics = async () => {
+            try {
+                // 1. Fetch Total Revenue
+                const { data: salesData, error: salesError } = await supabase
+                    .from('sales')
+                    .select('total_amount');
+
+                if (salesError) throw salesError;
+
+                const revenue = salesData?.reduce((sum, sale) => sum + (sale.total_amount || 0), 0) || 0;
+                setTotalRevenue(revenue);
+
+                // 2. Fetch Data for Profit Calculation
+                const { data: saleItems, error: itemsError } = await supabase
+                    .from('sale_items')
+                    .select('item_id, qty, unit_price');
+
+                if (itemsError) throw itemsError;
+
+                const { data: inwardData, error: inwardError } = await supabase
+                    .from('inward_register')
+                    .select('item_id, buy_price')
+                    .order('date', { ascending: false });
+
+                if (inwardError) throw inwardError;
+
+                const buyPriceMap = new Map();
+                inwardData?.forEach(item => {
+                    if (!buyPriceMap.has(item.item_id)) {
+                        buyPriceMap.set(item.item_id, item.buy_price);
+                    }
+                });
+
+                let profit = 0;
+                saleItems?.forEach(item => {
+                    const buyPrice = buyPriceMap.get(item.item_id) || 0;
+                    const margin = item.unit_price - buyPrice;
+                    profit += margin * item.qty;
+                });
+
+                setTotalProfit(profit);
+
+                // 3. Fetch Recent Activity (Inward Register)
+                const { data: recentData, error: recentError } = await supabase
+                    .from('inward_register')
+                    .select(`
+                        id,
+                        created_at,
+                        qty_packs,
+                        medicine ( name )
+                    `)
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                if (recentError) throw recentError;
+
+                if (recentData) {
+                    const mappedActivity: ActivityItem[] = recentData.map((item: any) => ({
+                        id: item.id,
+                        item: item.medicine?.name || 'Unknown',
+                        action: 'Restocked',
+                        quantity: item.qty_packs,
+                        time: item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/A'
+                    }));
+                    setRecentActivity(mappedActivity);
+                }
+
+            } catch (error) {
+                console.error("Error calculating metrics:", error);
+            }
+        };
+
+        fetchMetrics();
+    }, []);
 
     const handleNavigate = (view: string) => {
         setCurrentView(view);
@@ -240,21 +330,10 @@ export default function AnalyticsPage() {
                         <ChevronLeft className="w-5 h-5" />
                     </button>
 
-                    {/* Search Bar - Only show on dashboard for this demo */}
-                    {currentView === 'dashboard' ? (
-                        <div className="flex-1 mr-4">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                                <input
-                                    type="text"
-                                    placeholder="Search..."
-                                    className="w-full bg-white rounded-full py-2.5 pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-teal-300 shadow-sm transition-shadow"
-                                />
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex-1" /> /* Spacer for alignment */
-                    )}
+                    {/* Title - Analytics */}
+                    <div className="flex-1 flex justify-center">
+                        <h1 className="text-white text-xl font-bold tracking-wide">Analytics</h1>
+                    </div>
 
                     {/* User Avatar */}
                     <button className="bg-teal-400/50 p-2 rounded-full text-white hover:bg-teal-400 transition-colors">
@@ -266,9 +345,9 @@ export default function AnalyticsPage() {
             {/* Main Content Area */}
             <main className="relative min-h-screen">
                 {currentView === 'dashboard' ? (
-                    <DashboardView onNavigate={handleNavigate} />
+                    <DashboardView onNavigate={handleNavigate} totalRevenue={totalRevenue} />
                 ) : (
-                    <AnalyticsView onBack={() => setCurrentView('dashboard')} />
+                    <AnalyticsView onBack={() => setCurrentView('dashboard')} revenue={totalRevenue} profit={totalProfit} recentActivity={recentActivity} />
                 )}
             </main>
 
