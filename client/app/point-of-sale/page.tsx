@@ -13,9 +13,11 @@ import {
   Filter
 } from 'lucide-react';
 
+import { supabase } from '@/utils/superbase/client';
+
 // --- Types ---
 interface Drug {
-  id: number;
+  id: string; // Changed to string for UUID
   name: string;
   dosage: string;
   stockStatus: string;
@@ -25,62 +27,9 @@ interface Drug {
   type: string;
 }
 
-// --- Mock Data ---
-const INVENTORY_DATA: Drug[] = [
-  {
-    id: 1,
-    name: "Asprin 75mg",
-    dosage: "100/pack",
-    stockStatus: "Low Stock",
-    price: 1250.00,
-    fullPacksStock: 1,
-    loosePillsStock: 10,
-    type: "tablet"
-  },
-  {
-    id: 2,
-    name: "Panadol 500mg",
-    dosage: "120/pack",
-    stockStatus: "Low Stock",
-    price: 2500.00,
-    fullPacksStock: 5,
-    loosePillsStock: 101,
-    type: "tablet"
-  },
-  {
-    id: 3,
-    name: "Amoxicillin",
-    dosage: "50/pack",
-    stockStatus: "In Stock",
-    price: 1121.00,
-    fullPacksStock: 500,
-    loosePillsStock: 11,
-    type: "capsule"
-  },
-  {
-    id: 4,
-    name: "Metformin",
-    dosage: "100/pack",
-    stockStatus: "Low Stock",
-    price: 850.00,
-    fullPacksStock: 5,
-    loosePillsStock: 11,
-    type: "tablet"
-  },
-  {
-    id: 5,
-    name: "Vitamin C",
-    dosage: "100/pack",
-    stockStatus: "In Stock",
-    price: 450.00,
-    fullPacksStock: 20,
-    loosePillsStock: 0,
-    type: "tablet"
-  }
-];
-
 const App = () => {
   // --- State ---
+  const [inventory, setInventory] = useState<Drug[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null);
@@ -89,13 +38,52 @@ const App = () => {
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // --- Fetch Data ---
+  useEffect(() => {
+    const fetchInventory = async () => {
+      const { data, error } = await supabase
+        .from('pharmacy')
+        .select(`
+          item_id,
+          buy_price,
+          pack_qty,
+          pill_qty,
+          medicine (
+            name,
+            pack_size
+          )
+        `);
+
+      if (error) {
+        console.error('Error fetching inventory:', error);
+        return;
+      }
+
+      if (data) {
+        const mappedData: Drug[] = data.map((item: any) => ({
+          id: item.item_id,
+          name: item.medicine?.name || 'Unknown',
+          dosage: `${item.medicine?.pack_size || 0}/pack`,
+          stockStatus: item.pack_qty < 10 ? "Low Stock" : "In Stock",
+          price: item.buy_price, // Using buy_price as price for now
+          fullPacksStock: item.pack_qty,
+          loosePillsStock: item.pill_qty,
+          type: "tablet" // Default type
+        }));
+        setInventory(mappedData);
+      }
+    };
+
+    fetchInventory();
+  }, []);
+
   // --- Filter Logic ---
   const filteredInventory = useMemo(() => {
-    if (!searchQuery) return INVENTORY_DATA;
-    return INVENTORY_DATA.filter(drug =>
+    if (!searchQuery) return inventory;
+    return inventory.filter(drug =>
       drug.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [searchQuery]);
+  }, [searchQuery, inventory]);
 
   // --- Calculations ---
   const total = selectedDrug ? selectedDrug.price * quantity : 0;
@@ -114,15 +102,74 @@ const App = () => {
     if (newQty >= 1) setQuantity(newQty);
   };
 
-  const handleConfirmSale = () => {
+  const handleConfirmSale = async () => {
     if (!selectedDrug) return;
-    setShowSuccess(true);
-    setTimeout(() => {
-      setShowSuccess(false);
-      setSelectedDrug(null);
-      setQuantity(1);
-      setSearchQuery("");
-    }, 2000);
+
+    // Check for sufficient stock
+    if (selectedDrug.fullPacksStock < quantity) {
+      alert('Insufficient stock!');
+      return;
+    }
+
+    try {
+      // 1. Create Sale Record
+      const { data: saleData, error: saleError } = await supabase
+        .from('sales')
+        .insert([{ total_amount: total }])
+        .select()
+        .single();
+
+      if (saleError) throw saleError;
+      if (!saleData) throw new Error("Failed to create sale record");
+
+      const saleId = saleData.id;
+
+      // 2. Create Sale Item Record
+      const { error: itemError } = await supabase
+        .from('sale_items')
+        .insert([{
+          sale_id: saleId,
+          item_id: selectedDrug.id,
+          qty: quantity,
+          unit_price: selectedDrug.price,
+          total_price: total
+        }]);
+
+      if (itemError) throw itemError;
+
+      // 3. Deduct stock from Supabase
+      const { error: stockError } = await supabase
+        .from('pharmacy')
+        .update({
+          pack_qty: selectedDrug.fullPacksStock - quantity,
+          last_updated: new Date().toISOString()
+        })
+        .eq('item_id', selectedDrug.id)
+        .eq('buy_price', selectedDrug.price);
+
+      if (stockError) throw stockError;
+
+      // Update local state
+      setInventory(prevInventory =>
+        prevInventory.map(item =>
+          item.id === selectedDrug.id && item.price === selectedDrug.price
+            ? { ...item, fullPacksStock: item.fullPacksStock - quantity }
+            : item
+        )
+      );
+
+      setShowSuccess(true);
+      setTimeout(() => {
+        setShowSuccess(false);
+        setSelectedDrug(null);
+        setQuantity(1);
+        setSearchQuery("");
+      }, 2000);
+
+    } catch (error: any) {
+      console.error('Error processing sale:', error);
+      alert('Error processing sale: ' + error.message);
+    }
   };
 
   // Close dropdown if clicking outside
@@ -204,7 +251,7 @@ const App = () => {
                 {filteredInventory.length > 0 ? (
                   filteredInventory.map(drug => (
                     <div
-                      key={drug.id}
+                      key={`${drug.id}-${drug.price}`}
                       onClick={() => handleSelectDrug(drug)}
                       className="p-3 hover:bg-teal-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors"
                     >
