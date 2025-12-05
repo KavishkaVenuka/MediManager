@@ -1,37 +1,127 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Package, Search, Filter, Pill,
   ChevronDown, ChevronUp, RefreshCw,
   ArrowRightLeft, Trash2
 } from 'lucide-react';
+import { supabase } from '@/utils/superbase/client';
 
 // 1. Define the Data Shape
 interface InventoryItem {
-  id: string;
-  name: string;
-  packSize: number;
-  price: number;
+  item_id: string;
+  buy_price: number;
   pack_qty: number;
   pill_qty: number;
+  medicine: {
+    name: string;
+    pack_size: number;
+  };
 }
 
-// Dummy Data
-const inventoryData: InventoryItem[] = [
-  { id: '1', name: 'Asprin 75mg', packSize: 100, price: 1250.00, pack_qty: 1, pill_qty: 10 },
-  { id: '2', name: 'Panadol 500mg', packSize: 120, price: 2500.00, pack_qty: 5, pill_qty: 101 },
-  { id: '3', name: 'Amoxicillin', packSize: 50, price: 1121.00, pack_qty: 500, pill_qty: 11 },
-  { id: '4', name: 'Metformin', packSize: 100, price: 850.00, pack_qty: 5, pill_qty: 11 },
-  { id: '5', name: 'Vitamin C', packSize: 30, price: 400.00, pack_qty: 51, pill_qty: 11 },
-  { id: '6', name: 'Omeprazole', packSize: 100, price: 1500.00, pack_qty: 32, pill_qty: 11 },
-];
-
-const InventoryCard = ({ item }: { item: InventoryItem }) => {
+const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (itemId: string, buyPrice: number, newQty: number) => void }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [adjustQty, setAdjustQty] = useState<string>('');
   const [transferQty, setTransferQty] = useState<string>('');
+  const [updating, setUpdating] = useState(false);
+
+  const handleUpdate = async () => {
+    const newQty = parseInt(adjustQty);
+    if (isNaN(newQty)) {
+      alert('Please enter a valid number');
+      return;
+    }
+
+    try {
+      setUpdating(true);
+      const { error } = await supabase
+        .from('main_store')
+        .update({ pack_qty: newQty })
+        .eq('item_id', item.item_id)
+        .eq('buy_price', item.buy_price);
+
+      if (error) throw error;
+
+      onUpdate(item.item_id, item.buy_price, newQty);
+      setAdjustQty('');
+      alert('Stock updated successfully');
+    } catch (error: any) {
+      console.error('Error updating stock:', error);
+      alert('Error updating stock: ' + error.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleTransfer = async () => {
+    const qtyToTransfer = parseInt(transferQty);
+    if (isNaN(qtyToTransfer) || qtyToTransfer <= 0) {
+      alert('Please enter a valid quantity');
+      return;
+    }
+    if (qtyToTransfer > item.pack_qty) {
+      alert('Insufficient stock in Main Store');
+      return;
+    }
+
+    try {
+      setUpdating(true);
+
+      // 1. Reduce from Main Store
+      const { error: mainStoreError } = await supabase
+        .from('main_store')
+        .update({ pack_qty: item.pack_qty - qtyToTransfer })
+        .eq('item_id', item.item_id)
+        .eq('buy_price', item.buy_price);
+
+      if (mainStoreError) throw mainStoreError;
+
+      // 2. Upsert to Pharmacy
+      // Check if exists
+      const { data: pharmacyItem, error: fetchError } = await supabase
+        .from('pharmacy')
+        .select('pack_qty')
+        .eq('item_id', item.item_id)
+        .eq('buy_price', item.buy_price)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      if (pharmacyItem) {
+        // Update existing
+        const { error: updateError } = await supabase
+          .from('pharmacy')
+          .update({ pack_qty: pharmacyItem.pack_qty + qtyToTransfer })
+          .eq('item_id', item.item_id)
+          .eq('buy_price', item.buy_price);
+        if (updateError) throw updateError;
+      } else {
+        // Insert new
+        const { error: insertError } = await supabase
+          .from('pharmacy')
+          .insert({
+            item_id: item.item_id,
+            buy_price: item.buy_price,
+            pack_qty: qtyToTransfer,
+            pill_qty: 0 // Default
+          });
+        if (insertError) throw insertError;
+      }
+
+      // 3. Update local state
+      onUpdate(item.item_id, item.buy_price, item.pack_qty - qtyToTransfer);
+      setTransferQty('');
+      alert('Stock transferred successfully');
+
+    } catch (error: any) {
+      console.error('Error transferring stock:', error);
+      alert('Error transferring stock: ' + error.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-LK', {
@@ -61,12 +151,12 @@ const InventoryCard = ({ item }: { item: InventoryItem }) => {
         <div className="flex justify-between items-start mb-2">
           <div>
             <h3 className="text-lg font-bold text-gray-800 leading-tight">
-              {item.name}
+              {item.medicine?.name || 'Unknown Item'}
             </h3>
             {/* Pack Size Badge - Subtle */}
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs font-medium text-teal-700 bg-gray-100 px-2 py-0.5 rounded-md border border-gray-200">
-                {item.packSize} / pack
+                {item.medicine?.pack_size || 0} / pack
               </span>
               {/* Low Stock Badge */}
               {item.pack_qty < 10 && (
@@ -79,7 +169,7 @@ const InventoryCard = ({ item }: { item: InventoryItem }) => {
 
           <div className="text-right flex flex-col items-end">
             <span className="block font-bold text-[#00C2A8] text-lg">
-              {formatCurrency(item.price)}
+              {formatCurrency(item.buy_price)}
             </span>
             {/* Chevron for expansion */}
             <div className="mt-1 text-gray-400">
@@ -136,8 +226,12 @@ const InventoryCard = ({ item }: { item: InventoryItem }) => {
                 onChange={(e) => setAdjustQty(e.target.value)}
                 className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-800 font-bold focus:outline-none focus:ring-2 focus:ring-gray-300"
               />
-              <button className="bg-gray-900 text-white px-5 rounded-lg font-medium active:scale-95 transition-transform">
-                Update
+              <button
+                onClick={handleUpdate}
+                disabled={updating}
+                className="bg-gray-900 text-white px-5 rounded-lg font-medium active:scale-95 transition-transform disabled:opacity-50"
+              >
+                {updating ? '...' : 'Update'}
               </button>
             </div>
           </div>
@@ -156,8 +250,12 @@ const InventoryCard = ({ item }: { item: InventoryItem }) => {
                 onChange={(e) => setTransferQty(e.target.value)}
                 className="w-24 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-800 text-center font-bold focus:outline-none focus:ring-2 focus:ring-purple-200"
               />
-              <button className="flex-1 bg-purple-50 text-purple-700 font-bold rounded-lg flex items-center justify-center gap-2 active:bg-purple-100 transition-colors">
-                Transfer
+              <button
+                onClick={handleTransfer}
+                disabled={updating}
+                className="flex-1 bg-purple-50 text-purple-700 font-bold rounded-lg flex items-center justify-center gap-2 active:bg-purple-100 transition-colors disabled:opacity-50"
+              >
+                {updating ? '...' : 'Transfer'}
               </button>
               <button className="w-12 bg-red-50 text-red-500 border border-red-100 rounded-lg flex items-center justify-center active:bg-red-100 transition-colors">
                 <Trash2 size={18} />
@@ -171,6 +269,48 @@ const InventoryCard = ({ item }: { item: InventoryItem }) => {
 };
 
 const InventoryList = () => {
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchInventory = async () => {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('main_store')
+          .select(`
+            *,
+            medicine (
+              name,
+              pack_size
+            )
+          `);
+
+        console.log('Main Store Data:', data);
+        console.log('Main Store Error:', error);
+
+        if (error) throw error;
+        setItems(data as any); // Type assertion needed due to join
+      } catch (error: any) {
+        console.error('Error fetching inventory:', error);
+        setError(error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInventory();
+  }, []);
+
+  const handleStockUpdate = (itemId: string, buyPrice: number, newQty: number) => {
+    setItems(prevItems => prevItems.map(item =>
+      item.item_id === itemId && item.buy_price === buyPrice
+        ? { ...item, pack_qty: newQty }
+        : item
+    ));
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-50 pb-24 font-sans">
 
@@ -182,7 +322,7 @@ const InventoryList = () => {
             Main Store
           </h1>
           <span className="text-xs font-semibold bg-teal-50 text-teal-700 px-3 py-1 rounded-full border border-teal-100">
-            {inventoryData.length} Items
+            {items.length} Items
           </span>
         </div>
 
@@ -201,9 +341,24 @@ const InventoryList = () => {
 
       {/* --- List Section --- */}
       <div className="px-4 py-4 space-y-4 overflow-y-auto">
-        {inventoryData.map((item) => (
-          <InventoryCard key={item.id} item={item} />
-        ))}
+        {error && (
+          <div className="p-4 bg-red-50 text-red-600 rounded-xl border border-red-100">
+            Error: {error}
+          </div>
+        )}
+        {loading ? (
+          <div className="text-center py-10 text-gray-500">Loading inventory...</div>
+        ) : items.length === 0 && !error ? (
+          <div className="text-center py-10 text-gray-500">No items in stock.</div>
+        ) : (
+          items.map((item) => (
+            <InventoryCard
+              key={item.item_id + item.buy_price}
+              item={item}
+              onUpdate={handleStockUpdate}
+            />
+          ))
+        )}
       </div>
     </div>
   );
