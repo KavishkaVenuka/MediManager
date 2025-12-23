@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft, Calendar, Search, Plus, Store } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -23,6 +23,57 @@ const InwardRegisterForm = () => {
         buyPrice: '',
         retailPrice: ''
     });
+
+    // --- New State for Search Filtering ---
+    const [inventory, setInventory] = useState<any[]>([]);
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // --- Fetch Medicines on Mount ---
+    useEffect(() => {
+        const fetchMedicines = async () => {
+            const { data, error } = await supabase
+                .from('medicine')
+                .select('id, name, weight, pack_size');
+
+            if (error) {
+                console.error('Error fetching medicines:', error);
+            } else if (data) {
+                setInventory(data);
+            }
+        };
+        fetchMedicines();
+    }, []);
+
+    // --- Filter Logic ---
+    const filteredInventory = useMemo(() => {
+        if (!formData.drugName) return [];
+        return inventory.filter(drug =>
+            drug.name.toLowerCase().includes(formData.drugName.toLowerCase())
+        );
+    }, [formData.drugName, inventory]);
+
+    // --- Handle Drug Selection ---
+    const handleSelectDrug = (drug: any) => {
+        setFormData(prev => ({
+            ...prev,
+            drugName: drug.name,
+            weight: drug.weight?.toString() || '',
+            packSize: drug.pack_size?.toString() || ''
+        }));
+        setIsDropdownOpen(false);
+    };
+
+    // --- Close Dropdown on Click Outside ---
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsDropdownOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -221,7 +272,7 @@ const InwardRegisterForm = () => {
                     {/* Section 2: Item Details */}
                     <div className="space-y-4">
                         {/* Drug Search */}
-                        <div>
+                        <div ref={dropdownRef} className="relative">
                             <label htmlFor="drugName" className={labelStyle}>Drug Name</label>
                             <div className={inputContainerStyle}>
                                 <Search size={20} className={iconStyle} />
@@ -230,11 +281,40 @@ const InwardRegisterForm = () => {
                                     name="drugName"
                                     id="drugName"
                                     value={formData.drugName}
-                                    onChange={handleChange}
+                                    onChange={(e) => {
+                                        handleChange(e);
+                                        setIsDropdownOpen(true);
+                                    }}
+                                    onFocus={() => setIsDropdownOpen(true)}
                                     placeholder="Search repository..."
                                     className={`${inputStyle} pl-12`}
+                                    autoComplete="off"
                                 />
                             </div>
+
+                            {/* Dropdown Menu */}
+                            {isDropdownOpen && formData.drugName && (
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 max-h-60 overflow-y-auto z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                                    {filteredInventory.length > 0 ? (
+                                        filteredInventory.map((drug) => (
+                                            <div
+                                                key={drug.id}
+                                                onClick={() => handleSelectDrug(drug)}
+                                                className="p-3 hover:bg-teal-50 cursor-pointer border-b border-gray-50 last:border-0 transition-colors"
+                                            >
+                                                <p className="font-bold text-gray-700 text-sm">{drug.name}</p>
+                                                <p className="text-xs text-gray-500">
+                                                    {drug.weight ? `${drug.weight}mg` : 'N/A'} • {drug.pack_size ? `${drug.pack_size}/pack` : 'N/A'}
+                                                </p>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="p-3 text-center text-gray-400 text-sm">
+                                            No matches found. New item will be created.
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Weight and Pack Size Row */}
