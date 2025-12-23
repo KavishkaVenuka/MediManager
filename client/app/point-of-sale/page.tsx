@@ -42,7 +42,7 @@ const App = () => {
   useEffect(() => {
     const fetchInventory = async () => {
       const { data, error } = await supabase
-        .from('pharmacy')
+        .from('point_of_sale')
         .select(`
           item_id,
           buy_price,
@@ -139,7 +139,7 @@ const App = () => {
 
       // 3. Deduct stock from Supabase
       const { error: stockError } = await supabase
-        .from('pharmacy')
+        .from('point_of_sale')
         .update({
           pack_qty: selectedDrug.fullPacksStock - quantity,
           last_updated: new Date().toISOString()
