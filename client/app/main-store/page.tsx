@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Package, Search, Filter, Pill,
@@ -212,7 +212,7 @@ const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (ite
       {isExpanded && (
         <div className="bg-gray-50 border-t border-gray-100 p-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
 
-          {/* Control: Adjust Stock */}
+          {/* Control: Adjust Stock 
           <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
             <label className="text-xs font-bold text-gray-500 uppercase mb-2 block flex items-center gap-2">
               <RefreshCw size={12} /> Adjust Physical Stock
@@ -235,6 +235,7 @@ const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (ite
               </button>
             </div>
           </div>
+          */}
 
           {/* Control: Transfer Stock */}
           <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
@@ -272,6 +273,7 @@ const InventoryList = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const fetchInventory = async () => {
@@ -303,6 +305,14 @@ const InventoryList = () => {
     fetchInventory();
   }, []);
 
+  // --- Filter Logic ---
+  const filteredItems = useMemo(() => {
+    if (!searchQuery) return items;
+    return items.filter(item =>
+      item.medicine.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [searchQuery, items]);
+
   const handleStockUpdate = (itemId: string, buyPrice: number, newQty: number) => {
     setItems(prevItems => prevItems.map(item =>
       item.item_id === itemId && item.buy_price === buyPrice
@@ -330,6 +340,8 @@ const InventoryList = () => {
           <input
             type="text"
             placeholder="Search drugs..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-gray-100 text-gray-700 rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder:text-gray-400"
           />
           <Search className="absolute left-3 top-3.5 text-gray-400" size={18} />
@@ -351,7 +363,7 @@ const InventoryList = () => {
         ) : items.length === 0 && !error ? (
           <div className="text-center py-10 text-gray-500">No items in stock.</div>
         ) : (
-          items.map((item) => (
+          filteredItems.map((item) => (
             <InventoryCard
               key={item.item_id + item.buy_price}
               item={item}
