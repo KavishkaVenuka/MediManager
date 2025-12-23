@@ -30,6 +30,16 @@ CREATE TABLE pharmacy (
     PRIMARY KEY (item_id, buy_price)
 );
 
+-- 4.5 Point of Sale (Ready to Sell Stock)
+CREATE TABLE point_of_sale (
+    item_id UUID REFERENCES medicine(id) ON DELETE CASCADE,
+    buy_price DECIMAL(10, 2) NOT NULL,
+    pack_qty INTEGER DEFAULT 0,
+    pill_qty INTEGER DEFAULT 0,
+    last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (item_id, buy_price)
+);
+
 -- 5. Inward Register (Stock Entry Log)
 CREATE TABLE inward_register (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -43,24 +53,7 @@ CREATE TABLE inward_register (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 6. Sales (Transaction Header)
-CREATE TABLE sales (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    transaction_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    total_amount DECIMAL(10, 2) NOT NULL DEFAULT 0.00
-);
-
--- 7. Sale Items (Transaction Details)
-CREATE TABLE sale_items (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    sale_id UUID REFERENCES sales(id) ON DELETE CASCADE,
-    item_id UUID REFERENCES medicine(id),
-    qty INTEGER NOT NULL, 
-    unit_price DECIMAL(10, 2) NOT NULL, 
-    total_price DECIMAL(10, 2) NOT NULL
-);
 
 -- Indexes
 CREATE INDEX idx_medicine_name ON medicine(name);
 CREATE INDEX idx_pharmacy_item ON pharmacy(item_id);
-CREATE INDEX idx_sale_items_sale ON sale_items(sale_id);
