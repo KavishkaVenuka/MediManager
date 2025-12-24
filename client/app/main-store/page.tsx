@@ -18,6 +18,7 @@ interface InventoryItem {
   medicine: {
     name: string;
     pack_size: number;
+    weight: number;
   };
 }
 
@@ -156,7 +157,7 @@ const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (ite
             {/* Pack Size Badge - Subtle */}
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs font-medium text-teal-700 bg-gray-100 px-2 py-0.5 rounded-md border border-gray-200">
-                {item.medicine?.pack_size || 0} / pack
+                {item.medicine?.weight}mg • {item.medicine?.pack_size || 0} / pack
               </span>
               {/* Low Stock Badge */}
               {item.pack_qty < 10 && (
@@ -285,7 +286,8 @@ const InventoryList = () => {
             *,
             medicine (
               name,
-              pack_size
+              pack_size,
+              weight
             )
           `);
 
