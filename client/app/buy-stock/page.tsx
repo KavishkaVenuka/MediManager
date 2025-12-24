@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft, Calendar, Search, Plus, Store } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-
 import { supabase } from '@/utils/superbase/client';
 
 
@@ -89,9 +88,10 @@ const InwardRegisterForm = () => {
                 .from('medicine')
                 .select('id')
                 .eq('name', formData.drugName)
-                .single();
+                .eq('weight', Number(formData.weight) || 0)
+                .maybeSingle();
 
-            if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "Row not found"
+            if (fetchError) {
                 throw fetchError;
             }
 
