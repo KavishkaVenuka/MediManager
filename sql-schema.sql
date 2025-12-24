@@ -5,7 +5,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE medicine (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
-    weight INTEGER,  -- e.g., 500 (for 500mg)
+    weight TEXT, 
     pack_size INTEGER NOT NULL DEFAULT 1
 );
 
