@@ -8,6 +8,7 @@ import {
   ArrowRightLeft, Trash2
 } from 'lucide-react';
 import { supabase } from '@/utils/superbase/client';
+import { SkeletonCard } from '@/components/SkeletonCard';
 
 // 1. Define the Data Shape
 interface InventoryItem {
@@ -361,7 +362,9 @@ const InventoryList = () => {
           </div>
         )}
         {loading ? (
-          <div className="text-center py-10 text-gray-500">Loading inventory...</div>
+          Array(8).fill(null).map((_, index) => (
+            <SkeletonCard key={index} />
+          ))
         ) : items.length === 0 && !error ? (
           <div className="text-center py-10 text-gray-500">No items in stock.</div>
         ) : (
