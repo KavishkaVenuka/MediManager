@@ -16,11 +16,12 @@ import {
   ShoppingCart
 } from 'lucide-react';
 import { supabase } from '@/utils/superbase/client';
+import { SkeletonCard } from '@/components/SkeletonCard';
 
 
 interface ShelfItem {
   item_id: string;
-  buy_price: number;
+  retail_price: number;
   pack_qty: number;
   pill_qty: number;
   medicine: {
@@ -74,7 +75,7 @@ const PharmacyShelf = () => {
   }, [searchQuery, items]);
 
   // Calculate Total Value dynamically
-  const totalValue = items.reduce((acc, item) => acc + (item.buy_price * item.pack_qty), 0);
+  const totalValue = items.reduce((acc, item) => acc + (item.retail_price * item.pack_qty), 0);
 
   // Formatter
   const formatCurrency = (amount: number) => {
@@ -142,12 +143,14 @@ const PharmacyShelf = () => {
           </div>
         )}
         {loading ? (
-          <div className="text-center py-10 text-gray-500">Loading pharmacy inventory...</div>
+          Array(8).fill(null).map((_, index) => (
+            <SkeletonCard key={index} />
+          ))
         ) : items.length === 0 && !error ? (
           <div className="text-center py-10 text-gray-500">No items in pharmacy.</div>
         ) : (
           filteredItems.map((item) => (
-            <ShelfItemCard key={item.item_id + item.buy_price} item={item} formatCurrency={formatCurrency} />
+            <ShelfItemCard key={item.item_id + item.retail_price} item={item} formatCurrency={formatCurrency} />
           ))
         )}
       </div>
@@ -195,7 +198,7 @@ const ShelfItemCard = ({
         .from('pharmacy')
         .update({ pack_qty: item.pack_qty - qty })
         .eq('item_id', item.item_id)
-        .eq('buy_price', item.buy_price);
+        .eq('retail_price', item.retail_price);
 
       if (pharmacyError) throw pharmacyError;
 
@@ -205,7 +208,7 @@ const ShelfItemCard = ({
         .from('main_store')
         .select('pack_qty')
         .eq('item_id', item.item_id)
-        .eq('buy_price', item.buy_price)
+        .eq('retail_price', item.retail_price)
         .maybeSingle();
 
       if (fetchError) throw fetchError;
@@ -215,7 +218,7 @@ const ShelfItemCard = ({
           .from('main_store')
           .update({ pack_qty: mainStoreItem.pack_qty + qty })
           .eq('item_id', item.item_id)
-          .eq('buy_price', item.buy_price);
+          .eq('retail_price', item.retail_price);
         if (updateError) throw updateError;
       } else {
         // If it doesn't exist in main store (unlikely given the flow, but possible if deleted), insert it
@@ -223,7 +226,7 @@ const ShelfItemCard = ({
           .from('main_store')
           .insert({
             item_id: item.item_id,
-            buy_price: item.buy_price,
+            retail_price: item.retail_price,
             pack_qty: qty,
             pill_qty: 0
           });
@@ -263,7 +266,7 @@ const ShelfItemCard = ({
         .from('pharmacy')
         .update({ pack_qty: item.pack_qty - qty })
         .eq('item_id', item.item_id)
-        .eq('buy_price', item.buy_price);
+        .eq('retail_price', item.retail_price);
 
       if (pharmacyError) throw pharmacyError;
 
@@ -273,7 +276,7 @@ const ShelfItemCard = ({
         .from('point_of_sale')
         .select('pack_qty')
         .eq('item_id', item.item_id)
-        .eq('buy_price', item.buy_price)
+        .eq('retail_price', item.retail_price)
         .maybeSingle();
 
       if (fetchError) throw fetchError;
@@ -284,7 +287,7 @@ const ShelfItemCard = ({
           .from('point_of_sale')
           .update({ pack_qty: posItem.pack_qty + qty })
           .eq('item_id', item.item_id)
-          .eq('buy_price', item.buy_price);
+          .eq('retail_price', item.retail_price);
         if (updateError) throw updateError;
       } else {
         // Insert new
@@ -292,7 +295,7 @@ const ShelfItemCard = ({
           .from('point_of_sale')
           .insert({
             item_id: item.item_id,
-            buy_price: item.buy_price,
+            retail_price: item.retail_price,
             pack_qty: qty,
             pill_qty: 0
           });
@@ -341,7 +344,7 @@ const ShelfItemCard = ({
 
           <div className="text-right flex flex-col items-end">
             <span className="block font-bold text-emerald-600 text-lg">
-              {formatCurrency(item.buy_price)}
+              {formatCurrency(item.retail_price)}
             </span>
             {/* Chevron for expansion */}
             <div className="mt-1 text-gray-400">
