@@ -11,7 +11,7 @@ export default function Home() {
       <Header />
 
       <div className="px-6 -mt-6 relative z-20">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
 
           {/*Dashboard cards
                         shows from here */}
