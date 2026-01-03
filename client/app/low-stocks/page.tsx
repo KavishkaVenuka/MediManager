@@ -20,6 +20,7 @@ import {
     Clock
 } from 'lucide-react';
 import { supabase } from '@/utils/superbase/client';
+import { LowStockSkeletonCard } from './loading';
 
 /**
  * TYPES
@@ -215,7 +216,9 @@ export default function LowStock() {
             {/* --- LIST CONTENT --- */}
             <div className="px-6 mt-4 space-y-4">
                 {loading ? (
-                    <div className="text-center py-12 text-gray-400">Loading stock data...</div>
+                    Array(6).fill(null).map((_, index) => (
+                        <LowStockSkeletonCard key={index} />
+                    ))
                 ) : filteredData.length === 0 ? (
                     <div className="text-center py-12 text-gray-400">
                         <CheckCircle2 size={48} className="mx-auto mb-4 text-emerald-300" />
@@ -227,7 +230,7 @@ export default function LowStock() {
                         const isCritical = status === 'critical';
 
                         return (
-                            <div key={item.id} className="bg-white rounded-3xl p-5 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)] border border-gray-50 relative overflow-hidden group">
+                            <div key={`${item.id}-${item.price}`} className="bg-white rounded-3xl p-5 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)] border border-gray-50 relative overflow-hidden group">
                                 {/* Critical Indicator Strip */}
                                 {isCritical && (
                                     <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-400" />
