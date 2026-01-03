@@ -16,7 +16,8 @@ import {
     ChevronLeft,
     MoreHorizontal,
     ArrowUpRight,
-    ArrowDownRight
+    ArrowDownRight,
+    Gem // Added for High Value
 } from 'lucide-react';
 import {
     PieChart as RechartsPie,
@@ -33,10 +34,12 @@ import { supabase } from '@/utils/superbase/client';
  */
 interface ActivityItem {
     id: string;
-    item: string;
-    action: string;
-    quantity: number;
+    type: 'restock' | 'sale' | 'high-value';
+    title: string;
+    subtitle: string;
+    value?: string; // "+5" or "LKR 5000"
     time: string;
+    timestamp: number; // For sorting
 }
 
 /**
@@ -200,17 +203,32 @@ const AnalyticsView = ({ onBack, revenue, profit, recentActivity }: { onBack: ()
                         recentActivity.map((activity) => (
                             <div key={activity.id} className="flex items-center justify-between border-b border-gray-50 last:border-0 pb-3 last:pb-0">
                                 <div className="flex items-center gap-3">
-                                    <div className={`p-2 rounded-xl ${activity.quantity > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
-                                        {activity.quantity > 0 ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
+                                    {/* Icon Container */}
+                                    <div className={`p-2 rounded-xl flex items-center justify-center
+                                        ${activity.type === 'restock' ? 'bg-emerald-100 text-emerald-600' :
+                                            activity.type === 'sale' ? 'bg-blue-100 text-blue-600' :
+                                                'bg-amber-100 text-amber-600' // high-value
+                                        }`}
+                                    >
+                                        {activity.type === 'restock' && <ArrowDownRight size={18} />}
+                                        {activity.type === 'sale' && <ShoppingCart size={18} />}
+                                        {activity.type === 'high-value' && <Gem size={18} />}
                                     </div>
+
+                                    {/* Text Info */}
                                     <div>
-                                        <p className="font-semibold text-gray-800 text-sm">{activity.item}</p>
-                                        <p className="text-xs text-gray-400">{activity.action}</p>
+                                        <p className="font-semibold text-gray-800 text-sm">{activity.title}</p>
+                                        <p className="text-xs text-gray-400">{activity.subtitle}</p>
                                     </div>
                                 </div>
+
+                                {/* Value & Time */}
                                 <div className="text-right">
-                                    <p className={`font-bold text-sm ${activity.quantity > 0 ? 'text-emerald-600' : 'text-gray-800'}`}>
-                                        {activity.quantity > 0 ? '+' : ''}{activity.quantity}
+                                    <p className={`font-bold text-sm 
+                                        ${activity.type === 'restock' ? 'text-emerald-600' :
+                                            activity.type === 'high-value' ? 'text-amber-600' : 'text-gray-800'}`}
+                                    >
+                                        {activity.value}
                                     </p>
                                     <p className="text-xs text-gray-400">{activity.time}</p>
                                 </div>
@@ -235,23 +253,14 @@ export default function AnalyticsPage() {
     useEffect(() => {
         const fetchMetrics = async () => {
             try {
-                // 1. Fetch Total Revenue
-                const { data: salesData, error: salesError } = await supabase
-                    .from('sales')
-                    .select('total_amount');
-
-                if (salesError) throw salesError;
-
-                const revenue = salesData?.reduce((sum, sale) => sum + (sale.total_amount || 0), 0) || 0;
-                setTotalRevenue(revenue);
-
-                // 2. Fetch Data for Profit Calculation
+                // 1. Fetch Data for Revenue & Profit Calculation
                 const { data: saleItems, error: itemsError } = await supabase
                     .from('sale_items')
-                    .select('item_id, qty, unit_price');
+                    .select('item_id, qty, unit_sell_price, unit_buy_price');
 
                 if (itemsError) throw itemsError;
 
+                // 2. Fetch Inward Register for Fallback Cost
                 const { data: inwardData, error: inwardError } = await supabase
                     .from('inward_register')
                     .select('item_id, buy_price')
@@ -259,46 +268,110 @@ export default function AnalyticsPage() {
 
                 if (inwardError) throw inwardError;
 
+                // Build Map of Most Recent Buy Prices
                 const buyPriceMap = new Map();
-                inwardData?.forEach(item => {
+                inwardData?.forEach((item: any) => {
                     if (!buyPriceMap.has(item.item_id)) {
                         buyPriceMap.set(item.item_id, item.buy_price);
                     }
                 });
 
-                let profit = 0;
-                saleItems?.forEach(item => {
-                    const buyPrice = buyPriceMap.get(item.item_id) || 0;
-                    const margin = item.unit_price - buyPrice;
-                    profit += margin * item.qty;
+                // 3. Calculate Metrics
+                let totalCalcRevenue = 0;
+                let totalCalcProfit = 0;
+
+                saleItems?.forEach((item: any) => {
+                    const sellPrice = item.unit_sell_price || 0;
+                    const qty = item.qty || 0;
+
+                    // Revenue
+                    totalCalcRevenue += sellPrice * qty;
+
+                    // Cost Logic: Use recorded buy price, or fallback to map
+                    let unitCost = item.unit_buy_price;
+                    if (!unitCost || unitCost === 0) {
+                        unitCost = buyPriceMap.get(item.item_id) || 0;
+                    }
+
+                    const itemProfit = (sellPrice - unitCost) * qty;
+                    totalCalcProfit += itemProfit;
                 });
 
-                setTotalProfit(profit);
+                setTotalRevenue(totalCalcRevenue);
+                setTotalProfit(totalCalcProfit);
 
-                // 3. Fetch Recent Activity (Inward Register)
-                const { data: recentData, error: recentError } = await supabase
+                // --- FETCH RECENT ACTIVITY FEEDS ---
+                const activities: ActivityItem[] = [];
+
+                // A. Restocking Events (Inward Register)
+                const { data: restockData } = await supabase
                     .from('inward_register')
-                    .select(`
-                        id,
-                        created_at,
-                        qty_packs,
-                        medicine ( name )
-                    `)
+                    .select(`id, created_at, qty_packs, medicine ( name )`)
                     .order('created_at', { ascending: false })
                     .limit(5);
 
-                if (recentError) throw recentError;
-
-                if (recentData) {
-                    const mappedActivity: ActivityItem[] = recentData.map((item: any) => ({
-                        id: item.id,
-                        item: item.medicine?.name || 'Unknown',
-                        action: 'Restocked',
-                        quantity: item.qty_packs,
-                        time: item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/A'
-                    }));
-                    setRecentActivity(mappedActivity);
+                if (restockData) {
+                    restockData.forEach((item: any) => {
+                        activities.push({
+                            id: `restock-${item.id}`,
+                            type: 'restock',
+                            title: item.medicine?.name || 'Unknown Item',
+                            subtitle: 'Restocked',
+                            value: `+${item.qty_packs}`,
+                            time: item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+                            timestamp: new Date(item.created_at).getTime()
+                        });
+                    });
                 }
+
+                // B. Recent Sales
+                // Fetch recent IDs first to limit join load, or just fetch last 10 sale_items
+                const { data: soldData } = await supabase
+                    .from('sale_items')
+                    .select(`id, qty, medicine ( name ), sales ( created_at )`)
+                    .order('id', { ascending: false })
+                    .limit(10);
+
+                if (soldData) {
+                    soldData.forEach((item: any) => {
+                        const time = item.sales?.created_at;
+                        activities.push({
+                            id: `sale-${item.id}`,
+                            type: 'sale',
+                            title: item.medicine?.name || 'Unknown Item',
+                            subtitle: 'Sold',
+                            value: `-${item.qty}`,
+                            time: time ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+                            timestamp: time ? new Date(time).getTime() : 0
+                        });
+                    });
+                }
+
+                // C. High Value Transactions
+                const { data: highValueData } = await supabase
+                    .from('sales')
+                    .select('id, total_amount, created_at')
+                    .gt('total_amount', 5000)
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                if (highValueData) {
+                    highValueData.forEach((item: any) => {
+                        activities.push({
+                            id: `high-${item.id}`,
+                            type: 'high-value',
+                            title: 'High Value Transaction',
+                            subtitle: 'Major Sale',
+                            value: `LKR ${item.total_amount.toLocaleString()}`,
+                            time: item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+                            timestamp: new Date(item.created_at).getTime()
+                        });
+                    });
+                }
+
+                // D. Merge & Sort
+                activities.sort((a, b) => b.timestamp - a.timestamp);
+                setRecentActivity(activities.slice(0, 10)); // Keep top 10 combined
 
             } catch (error) {
                 console.error("Error calculating metrics:", error);
