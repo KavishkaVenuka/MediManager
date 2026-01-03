@@ -45,7 +45,7 @@ const App = () => {
         .from('point_of_sale')
         .select(`
           item_id,
-          buy_price,
+          retail_price,
           pack_qty,
           pill_qty,
           medicine (
@@ -65,7 +65,7 @@ const App = () => {
           name: item.medicine?.name || 'Unknown',
           dosage: `${item.medicine?.pack_size || 0}/pack`,
           stockStatus: item.pack_qty < 10 ? "Low Stock" : "In Stock",
-          price: item.buy_price, // Using buy_price as price for now
+          price: item.retail_price, // Using retail_price as price
           fullPacksStock: item.pack_qty,
           loosePillsStock: item.pill_qty,
           type: "tablet" // Default type
@@ -131,8 +131,8 @@ const App = () => {
           sale_id: saleId,
           item_id: selectedDrug.id,
           qty: quantity,
-          unit_price: selectedDrug.price,
-          total_price: total
+          unit_sell_price: selectedDrug.price,
+          unit_buy_price: 0
         }]);
 
       if (itemError) throw itemError;
@@ -145,7 +145,7 @@ const App = () => {
           last_updated: new Date().toISOString()
         })
         .eq('item_id', selectedDrug.id)
-        .eq('buy_price', selectedDrug.price);
+        .eq('retail_price', selectedDrug.price);
 
       if (stockError) throw stockError;
 
