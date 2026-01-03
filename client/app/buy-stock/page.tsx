@@ -105,7 +105,7 @@ const InwardRegisterForm = () => {
                         {
                             name: formData.drugName,
                             weight: Number(formData.weight) || 0,
-                            pack_size: Number(formData.packSize) || 1,
+                            pack_size: parseInt(formData.packSize, 10) || 1,
                         }
                     ])
                     .select('id')
@@ -123,8 +123,8 @@ const InwardRegisterForm = () => {
                         date: formData.date,
                         destination: formData.destination,
                         item_id: medicineId,
-                        qty_packs: Number(formData.qty) || 0,
-                        free_packs: Number(formData.free) || 0,
+                        qty_packs: parseInt(formData.qty, 10) || 0,
+                        free_packs: parseInt(formData.free, 10) || 0,
                         buy_price: Number(formData.buyPrice) || 0,
                         retail_price: Number(formData.retailPrice) || 0,
                     },
@@ -136,15 +136,15 @@ const InwardRegisterForm = () => {
             // 4. Update Inventory (Main Store or Pharmacy)
             // Determine target table based on destination
             const targetTable = formData.destination === 'Main Store' ? 'main_store' : 'pharmacy';
-            const totalPacks = (Number(formData.qty) || 0) + (Number(formData.free) || 0);
-            const buyPrice = Number(formData.buyPrice) || 0;
+            const totalPacks = (parseInt(formData.qty, 10) || 0) + (parseInt(formData.free, 10) || 0);
+            const retailPrice = Number(formData.retailPrice) || 0;
 
             // Check if item exists in the target inventory table
             const { data: existingInventory, error: inventoryFetchError } = await supabase
                 .from(targetTable)
                 .select('pack_qty')
                 .eq('item_id', medicineId)
-                .eq('buy_price', buyPrice)
+                .eq('retail_price', retailPrice)
                 .single();
 
             if (inventoryFetchError && inventoryFetchError.code !== 'PGRST116') {
@@ -160,7 +160,7 @@ const InwardRegisterForm = () => {
                         last_updated: new Date().toISOString()
                     })
                     .eq('item_id', medicineId)
-                    .eq('buy_price', buyPrice);
+                    .eq('retail_price', retailPrice);
 
                 if (updateError) throw updateError;
             } else {
@@ -170,7 +170,7 @@ const InwardRegisterForm = () => {
                     .insert([
                         {
                             item_id: medicineId,
-                            buy_price: buyPrice,
+                            retail_price: retailPrice,
                             pack_qty: totalPacks,
                             pill_qty: 0, // Initial pill qty is 0
                         }
