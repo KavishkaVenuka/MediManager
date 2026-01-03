@@ -13,7 +13,7 @@ import { SkeletonCard } from '@/components/SkeletonCard';
 // 1. Define the Data Shape
 interface InventoryItem {
   item_id: string;
-  buy_price: number;
+  retail_price: number;
   pack_qty: number;
   pill_qty: number;
   medicine: {
@@ -23,7 +23,7 @@ interface InventoryItem {
   };
 }
 
-const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (itemId: string, buyPrice: number, newQty: number) => void }) => {
+const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (itemId: string, retailPrice: number, newQty: number) => void }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [adjustQty, setAdjustQty] = useState<string>('');
   const [transferQty, setTransferQty] = useState<string>('');
@@ -42,11 +42,11 @@ const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (ite
         .from('main_store')
         .update({ pack_qty: newQty })
         .eq('item_id', item.item_id)
-        .eq('buy_price', item.buy_price);
+        .eq('retail_price', item.retail_price);
 
       if (error) throw error;
 
-      onUpdate(item.item_id, item.buy_price, newQty);
+      onUpdate(item.item_id, item.retail_price, newQty);
       setAdjustQty('');
       alert('Stock updated successfully');
     } catch (error: any) {
@@ -76,7 +76,7 @@ const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (ite
         .from('main_store')
         .update({ pack_qty: item.pack_qty - qtyToTransfer })
         .eq('item_id', item.item_id)
-        .eq('buy_price', item.buy_price);
+        .eq('retail_price', item.retail_price);
 
       if (mainStoreError) throw mainStoreError;
 
@@ -86,7 +86,7 @@ const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (ite
         .from('pharmacy')
         .select('pack_qty')
         .eq('item_id', item.item_id)
-        .eq('buy_price', item.buy_price)
+        .eq('retail_price', item.retail_price)
         .maybeSingle();
 
       if (fetchError) throw fetchError;
@@ -97,7 +97,7 @@ const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (ite
           .from('pharmacy')
           .update({ pack_qty: pharmacyItem.pack_qty + qtyToTransfer })
           .eq('item_id', item.item_id)
-          .eq('buy_price', item.buy_price);
+          .eq('retail_price', item.retail_price);
         if (updateError) throw updateError;
       } else {
         // Insert new
@@ -105,7 +105,7 @@ const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (ite
           .from('pharmacy')
           .insert({
             item_id: item.item_id,
-            buy_price: item.buy_price,
+            retail_price: item.retail_price,
             pack_qty: qtyToTransfer,
             pill_qty: 0 // Default
           });
@@ -113,7 +113,7 @@ const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (ite
       }
 
       // 3. Update local state
-      onUpdate(item.item_id, item.buy_price, item.pack_qty - qtyToTransfer);
+      onUpdate(item.item_id, item.retail_price, item.pack_qty - qtyToTransfer);
       setTransferQty('');
       alert('Stock transferred successfully');
 
@@ -171,7 +171,7 @@ const InventoryCard = ({ item, onUpdate }: { item: InventoryItem, onUpdate: (ite
 
           <div className="text-right flex flex-col items-end">
             <span className="block font-bold text-[#00C2A8] text-lg">
-              {formatCurrency(item.buy_price)}
+              {formatCurrency(item.retail_price)}
             </span>
             {/* Chevron for expansion */}
             <div className="mt-1 text-gray-400">
@@ -316,9 +316,9 @@ const InventoryList = () => {
     );
   }, [searchQuery, items]);
 
-  const handleStockUpdate = (itemId: string, buyPrice: number, newQty: number) => {
+  const handleStockUpdate = (itemId: string, retailPrice: number, newQty: number) => {
     setItems(prevItems => prevItems.map(item =>
-      item.item_id === itemId && item.buy_price === buyPrice
+      item.item_id === itemId && item.retail_price === retailPrice
         ? { ...item, pack_qty: newQty }
         : item
     ));
@@ -370,7 +370,7 @@ const InventoryList = () => {
         ) : (
           filteredItems.map((item) => (
             <InventoryCard
-              key={item.item_id + item.buy_price}
+              key={item.item_id + item.retail_price}
               item={item}
               onUpdate={handleStockUpdate}
             />
