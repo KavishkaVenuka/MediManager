@@ -9,6 +9,8 @@ import {
 import * as XLSX from "xlsx";
 import { supabase } from '@/utils/superbase/client';
 
+import Loading from "./loading";
+
 export default function DashboardMobile() {
   const [activeTab, setActiveTab] = useState<"inventory" | "sales">("inventory");
   const [searchTerm, setSearchTerm] = useState("");
@@ -35,7 +37,7 @@ export default function DashboardMobile() {
         // Need sale_items for selling price & qty, and inward_register for buy_price
         const { data: saleItems, error: itemsError } = await supabase
           .from('sale_items')
-          .select('item_id, qty, unit_price');
+          .select('item_id, qty, unit_sell_price');
 
         if (itemsError) throw itemsError;
 
@@ -58,7 +60,7 @@ export default function DashboardMobile() {
         let profit = 0;
         saleItems?.forEach(item => {
           const buyPrice = buyPriceMap.get(item.item_id) || 0;
-          const margin = item.unit_price - buyPrice;
+          const margin = item.unit_sell_price - buyPrice;
           profit += margin * item.qty;
         });
 
@@ -106,9 +108,9 @@ export default function DashboardMobile() {
             .select(`
               id,
               qty,
-              total_price,
+              unit_sell_price,
               medicine ( name ),
-              sales ( transaction_date )
+              sales ( created_at )
             `)
             .limit(50); // Limit to recent 50 sales for performance
 
@@ -117,10 +119,10 @@ export default function DashboardMobile() {
           if (data) {
             const mapped = data.map((item: any) => ({
               id: item.id,
-              time: item.sales?.transaction_date ? new Date(item.sales.transaction_date).toLocaleDateString() : 'N/A',
+              time: item.sales?.created_at ? new Date(item.sales.created_at).toLocaleDateString() : 'N/A',
               name: item.medicine?.name || 'Unknown',
               qty: item.qty,
-              total: item.total_price
+              total: item.qty * item.unit_sell_price
             }));
             setSalesData(mapped);
           }
@@ -215,7 +217,7 @@ export default function DashboardMobile() {
       <div className="px-4 mt-6">
 
         {loading ? (
-          <div className="text-center py-10 text-gray-500">Loading data...</div>
+          <Loading activeTab={activeTab} />
         ) : (
           <>
             {/* ================= INVENTORY TAB ================= */}
