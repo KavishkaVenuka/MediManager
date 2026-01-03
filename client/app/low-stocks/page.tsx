@@ -116,7 +116,7 @@ export default function LowStock() {
                     .select(`
                         item_id,
                         pack_qty,
-                        buy_price,
+                        retail_price,
                         last_updated,
                         medicine ( name, weight )
                     `);
@@ -133,7 +133,7 @@ export default function LowStock() {
                         maxStock: 100, // Default max
                         unit: 'packs',
                         lastOrdered: item.last_updated ? new Date(item.last_updated).toLocaleDateString() : 'N/A',
-                        price: item.buy_price
+                        price: item.retail_price
                     }));
                     setMedicines(mappedData);
                 }
