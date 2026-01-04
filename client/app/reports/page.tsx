@@ -6,7 +6,7 @@ import {
   History, Package, Calendar, DollarSign,
   ArrowUpRight, Building2, Store
 } from "lucide-react";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { supabase } from '@/utils/superbase/client';
 
 import Loading from "./loading";
@@ -86,20 +86,26 @@ export default function DashboardMobile() {
               date,
               qty_packs,
               destination,
-              medicine ( name )
+              buy_price,
+              medicine ( name, weight )
             `)
             .order('date', { ascending: false });
 
           if (error) throw error;
 
           if (data) {
+            console.log("Raw Inventory Data:", data);
             const mapped = data.map((item: any) => ({
               id: item.id,
               date: item.date,
               name: item.medicine?.name || 'Unknown',
+              weight: item.medicine?.weight || 'N/A',
+              cost: item.buy_price || 0,
               store: item.destination === 'Main Store' ? item.qty_packs : 0,
               pharma: item.destination === 'Pharmacy' ? item.qty_packs : 0,
+              totalCost: (item.buy_price || 0) * item.qty_packs
             }));
+            console.log("Mapped Inventory Data:", mapped);
             setInventoryData(mapped);
           }
         } else {
@@ -109,7 +115,8 @@ export default function DashboardMobile() {
               id,
               qty,
               unit_sell_price,
-              medicine ( name ),
+              unit_buy_price,
+              medicine ( name, weight ),
               sales ( created_at )
             `)
             .limit(50); // Limit to recent 50 sales for performance
@@ -117,13 +124,18 @@ export default function DashboardMobile() {
           if (error) throw error;
 
           if (data) {
+            console.log("Raw Sales Data:", data);
             const mapped = data.map((item: any) => ({
               id: item.id,
               time: item.sales?.created_at ? new Date(item.sales.created_at).toLocaleDateString() : 'N/A',
               name: item.medicine?.name || 'Unknown',
+              weight: item.medicine?.weight || 'N/A',
+              cost: item.unit_buy_price || 0,
               qty: item.qty,
-              total: item.qty * item.unit_sell_price
+              total: item.qty * item.unit_sell_price,
+              totalCost: (item.unit_buy_price || 0) * item.qty
             }));
+            console.log("Mapped Sales Data:", mapped);
             setSalesData(mapped);
           }
         }
@@ -138,7 +150,8 @@ export default function DashboardMobile() {
   }, [activeTab]);
 
   // --- ACTIONS (Placeholder Logic) ---
-  const handleExport = (type: string) => {
+  // --- ACTIONS ---
+  const handleExport = async (type: string) => {
     const rawData = type === "Inventory" ? inventoryData : salesData;
 
     if (rawData.length === 0) {
@@ -146,15 +159,47 @@ export default function DashboardMobile() {
       return;
     }
 
-    // Remove 'id' from the exported data
-    const dataToExport = rawData.map(({ id, ...rest }) => rest);
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(type);
 
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, type);
+    // Define columns based on data type
+    if (type === "Inventory") {
+      worksheet.columns = [
+        { header: "Date", key: "date", width: 15 },
+        { header: "Medicine Name", key: "name", width: 25 },
+        { header: "Weight", key: "weight", width: 15 },
+        { header: "Cost per Unit (LKR)", key: "cost", width: 20 },
+        { header: "Store Qty", key: "store", width: 12 },
+        { header: "Pharmacy Qty", key: "pharma", width: 15 },
+        { header: "Total Cost (LKR)", key: "totalCost", width: 20 },
+      ];
+    } else {
+      worksheet.columns = [
+        { header: "Time", key: "time", width: 20 },
+        { header: "Medicine Name", key: "name", width: 25 },
+        { header: "Weight", key: "weight", width: 15 },
+        { header: "Qty", key: "qty", width: 10 },
+        { header: "Total Price (Sales)", key: "total", width: 20 },
+      ];
+    }
 
-    const fileName = `${type}_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+    // Add rows
+    worksheet.addRows(rawData);
+
+    // Style header row (optional but nice)
+    worksheet.getRow(1).font = { bold: true };
+
+    // Generate buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    // Create blob and download
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${type}_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const handleImport = (type: string) => {
