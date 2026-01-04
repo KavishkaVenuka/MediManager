@@ -1,40 +1,24 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useTransition } from 'react';
 import { Mail, Lock, Eye, EyeOff, CheckCircle2, ArrowRight } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'; // Keep for client-side validatiion if needed, but server handles redirect
+import { login } from './actions';
 
 export default function LoginPage() {
-    const router = useRouter();
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    const router = useRouter(); // Ideally not needed for redirect if server action handles it, but kept to avoid breaking changes
     const [showPassword, setShowPassword] = useState(false);
-    const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isPending, startTransition] = useTransition();
 
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
+    const handleSubmit = async (formData: FormData) => {
         setError(null);
-
-        // Placeholder for Supabase Auth
-        try {
-            // Simulate network request
-            await new Promise(resolve => setTimeout(resolve, 1500));
-
-            // Basic validation for demo
-            if (email && password) {
-                // Success
-                console.log("Logged in with:", email);
-                router.push('/'); // Redirect to dashboard
-            } else {
-                throw new Error("Please enter both email and password.");
+        startTransition(async () => {
+            const result = await login(formData);
+            if (result?.error) {
+                setError(result.error);
             }
-        } catch (err: any) {
-            setError(err.message || "Invalid credentials");
-        } finally {
-            setLoading(false);
-        }
+        });
     };
 
     return (
@@ -59,7 +43,7 @@ export default function LoginPage() {
 
                 {/* Login Card */}
                 <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-8 shadow-2xl shadow-teal-900/20">
-                    <form onSubmit={handleLogin} className="space-y-6">
+                    <form action={handleSubmit} className="space-y-6">
 
                         {/* Email Input */}
                         <div className="space-y-2">
@@ -69,11 +53,10 @@ export default function LoginPage() {
                                     <Mail className="h-5 w-5 text-gray-400 group-focus-within:text-primary-teal transition-colors" />
                                 </div>
                                 <input
+                                    name="email"
                                     type="email"
                                     className="block w-full pl-11 pr-4 py-4 bg-light-teal/50 border border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:bg-white transition-all font-medium"
                                     placeholder="doctor@medimanager.com"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
                                     required
                                 />
                             </div>
@@ -87,11 +70,10 @@ export default function LoginPage() {
                                     <Lock className="h-5 w-5 text-gray-400 group-focus-within:text-primary-teal transition-colors" />
                                 </div>
                                 <input
+                                    name="password"
                                     type={showPassword ? "text" : "password"}
                                     className="block w-full pl-11 pr-12 py-4 bg-light-teal/50 border border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:bg-white transition-all font-medium"
                                     placeholder="••••••••"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
                                     required
                                 />
                                 <button
@@ -115,10 +97,10 @@ export default function LoginPage() {
                         {/* Submit Button */}
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={isPending}
                             className="w-full bg-dark-teal text-white font-bold py-4 rounded-2xl shadow-lg shadow-teal-500/30 hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed group"
                         >
-                            {loading ? (
+                            {isPending ? (
                                 <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                             ) : (
                                 <>
