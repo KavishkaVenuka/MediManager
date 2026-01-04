@@ -21,6 +21,8 @@ export default function BottomNav() {
         { path: '/point-of-sale', icon: ShoppingCart, label: 'Point-of-sale' },
     ];
 
+    if (pathname === '/login') return null;
+
     return (
         <div className="fixed bottom-0 left-0 right-0 z-50">
             <div className="bg-white border-t border-gray-100 px-8 py-2 pb-5 flex justify-between items-center rounded-t-[2rem] shadow-[0_-5px_20px_rgba(0,0,0,0.03)]">
